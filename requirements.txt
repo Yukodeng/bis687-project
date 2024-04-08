@@ -1,0 +1,9 @@
+numpy>=1.7.0
+keras>=2.4.0,<2.6.0
+tensorflow>=2.0.0,<2.5.0
+h5py
+six>=1.10.0
+scikit-learn
+scanpy
+kopt
+pandas
