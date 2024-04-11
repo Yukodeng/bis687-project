@@ -1,5 +1,5 @@
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+import tensorflow.compat.v1 as tf #YD: add.compat.v1 to invert to earlier version
+tf.disable_v2_behavior() #YD
 import keras.backend as K
 from keras.layers import GaussianNoise, Dense, Activation
 from sklearn.cluster import KMeans
@@ -7,6 +7,7 @@ from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from scipy.optimize import linear_sum_assignment as linear_assignment
 import os
 import numpy as np
+from preprocess import *
 
 
 MeanAct = lambda x: tf.clip_by_value(x, 1e-5, 1e6)
@@ -23,8 +24,8 @@ def cluster_acc(y_true, y_pred):
     # from sklearn.utils.linear_assignment_ import linear_assignment
     # ind = linear_assignment(w.max() - w)
     # return sum([w[i, j] for i, j in ind]) * 1.0 / y_pred.size
-    row_ind, col_ind = linear_assignment(w.max() - w)
-    return sum([w[i, j] for i, j in zip(row_ind, col_ind)]) * 1.0 / y_pred.size
+    row_ind, col_ind = linear_assignment(w.max() - w) # YD Change
+    return sum([w[i, j] for i, j in zip(row_ind, col_ind)]) * 1.0 / y_pred.size # YD Change
 
 
 def cal_dist(hidden, clusters):
@@ -138,8 +139,9 @@ def ZINB(pi, theta, y_true, y_pred, ridge_lambda, mean = True, mask = False, deb
 
 
 class scDMFK(object):
-    def __init__(self, dataname, dims, cluster_num, alpha, sigma, theta, learning_rate, noise_sd=1.5, init='glorot_uniform', act='relu', adaptative = True, model = "multinomial", mode = "indirect"):
+    def __init__(self, dataname, output_dir, dims, alpha, sigma, learning_rate, theta=1, cluster_num=1, noise_sd=1.5, init='glorot_uniform', act='relu', adaptative = True, model = "multinomial", mode = "indirect"):
         self.dataname = dataname
+        self.output_dir = output_dir
         self.dims = dims
         self.cluster_num = cluster_num
         self.alpha = alpha
@@ -158,8 +160,11 @@ class scDMFK(object):
         self.x = tf.placeholder(dtype=tf.float32, shape=(None, self.dims[0]))
         self.x_count = tf.placeholder(dtype=tf.float32, shape=(None, self.dims[0]))
         self.sf_layer = tf.placeholder(dtype=tf.float32, shape=(None, 1))
-        self.clusters = tf.get_variable(name=self.dataname + "/clusters_rep", shape=[self.cluster_num, self.dims[-1]],
+        self.clusters = tf.get_variable(name=self.dataname[:self.dataname.rindex('/')] + "/clusters_rep", #YD change
+                                        shape=[self.cluster_num, self.dims[-1]],
                                         dtype=tf.float32, initializer=tf.glorot_uniform_initializer())
+
+        
 
         self.h = self.x
         self.h = GaussianNoise(self.noise_sd, name='input_noise')(self.h)
@@ -186,7 +191,7 @@ class scDMFK(object):
             else:
                 self.P = Dense(units=self.dims[0], activation=tf.nn.softmax, kernel_initializer=self.init, name='pi')(self.h)
                 self.pre_loss = multinomial(self.x_count, self.P)
-        elif self.model == "ZINB":
+        elif self.model == "ZINB":       
             self.pi = Dense(units=self.dims[0], activation='sigmoid', kernel_initializer=self.init, name='pi')(self.h)
             self.disp = Dense(units=self.dims[0], activation=DispAct, kernel_initializer=self.init, name='dispersion')(self.h)
             self.mean = Dense(units=self.dims[0], activation=MeanAct, kernel_initializer=self.init, name='mean')(self.h)
@@ -204,6 +209,8 @@ class scDMFK(object):
         self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
         self.pretrain_op = self.optimizer.minimize(self.pre_loss)
         self.train_op = self.optimizer.minimize(self.total_loss)
+        # print(self.output.eval(session=tf.Session()))
+
 
     def pretrain(self, X, count_X, size_factor, batch_size, pretrain_epoch, gpu_option):
         print("begin the pretraining")
@@ -242,7 +249,22 @@ class scDMFK(object):
                             self.x_count: count_X[(pre_index * batch_size):(
                                     (pre_index + 1) * batch_size)]})
                     self.latent_repre[(pre_index * batch_size):((pre_index + 1) * batch_size)] = latent
+                    # hidden prepresentation omega + b
                     pre_index += 1
+        print(self.latent_repre)
+
+    def write(self, adata, colnames=None):
+        #YD added
+        colnames = adata.var_names.values if colnames is None else colnames
+        rownames = adata.obs_names.values
+
+        print('scDMFK: Saving output(s)...')
+        data_path = 'data/' + self.output_dir + '/'
+        os.makedirs(data_path, exist_ok=True)
+
+        write_text_matrix(self.latent_repre,
+                          os.path.join(data_path, 'mean.csv'),
+                          rownames=rownames, colnames=colnames, transpose=False)
 
     def funetrain(self, X, count_X, Y, size_factor, batch_size, funetrain_epoch, update_epoch, error):
         kmeans = KMeans(n_clusters=self.cluster_num, init="k-means++", random_state=888)

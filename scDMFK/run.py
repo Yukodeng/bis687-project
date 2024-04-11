@@ -7,11 +7,12 @@ import scanpy as sc # "scanpy.api" has been deprecated in newer versions
 
 
 if __name__ == "__main__":
-    print("this line should show")
-    random_seed = [1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888, 9999, 10000]
+    print("begin training")
 
     parser = argparse.ArgumentParser(description="train", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--dataname", default = "Park", type = str)
+    parser.add_argument('--task', default='denoising', type=str)
+    parser.add_argument("--dataname", default = "Young", type = str)
+    parser.add_argument("--outputdir", type = str)
     parser.add_argument("--model", default = "multinomial")
     parser.add_argument("--mode", default="indirect")
     parser.add_argument("--adaptive", default = True)
@@ -31,35 +32,49 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    X, Y = prepro(args.dataname)
-    X = np.ceil(X).astype(np.int)
-    count_X = X
-
-    adata = sc.AnnData(X)
-    adata.obs['Group'] = Y
+    # X, Y = prepro(args.dataname)
+    # X = np.ceil(X).astype(np.int)
+    # count_X = X
+    # adata = sc.AnnData(X)
+    # adata.obs['Group'] = Y
+    adata = prepro(args.dataname)
     adata = normalize(adata, highly_genes=args.highly_genes, size_factors=True, normalize_input=True, logtrans_input=True)
     X = adata.X.astype(np.float32)
-    Y = np.array(adata.obs["Group"])
-    high_variable = np.array(adata.var.highly_variable.index, dtype=np.int)
+    count_X = X # YD add
+    Y = np.array(adata.obs["Group"]) 
+    # high_variable = np.array(adata.var.highly_variable.index, dtype=np.int)
+    high_variable = adata.var.highly_variable
     count_X = count_X[:, high_variable]
     size_factor = np.array(adata.obs.size_factors).reshape(-1, 1).astype(np.float32)
-    cluster_number = int(max(Y) - min(Y) + 1)
+    
 
-    result = []
+    if args.task == 'clustering':
+        cluster_number = int(max(Y) - min(Y) + 1)
 
-    for seed in random_seed:
-        np.random.seed(seed)
-        tf.reset_default_graph()
-        scClustering = scDMFK(args.dataname, args.dims, cluster_number, args.alpha, args.sigma, args.learning_rate, args.noise_sd,
-                             adaptative=args.adaptive, model=args.model, mode=args.mode)
-        scClustering.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
-        accuracy, ARI, NMI = scClustering.funetrain(X, count_X, Y, size_factor, args.batch_size, args.funetrain_epoch, args.update_epoch, args.error)
-        result.append([args.dataname, seed, accuracy, ARI, NMI])
+        random_seed = [1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888, 9999, 10000]
+        result = []
 
-    output = np.array(result)
-    output = pd.DataFrame(output, columns=["dataset name", "random seed", "accuracy", "ARI", "NMI"])
-    print(output)
+        for seed in random_seed:
+            np.random.seed(seed)
+            tf.reset_default_graph()
+            scClustering = scDMFK(args.dataname, args.outputdir, args.dims, cluster_number, args.alpha, args.sigma, args.learning_rate, args.noise_sd,
+                                adaptative=args.adaptive, model=args.model, mode=args.mode)
+            scClustering.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
+            accuracy, ARI, NMI = scClustering.funetrain(X, count_X, Y, size_factor, args.batch_size, args.funetrain_epoch, args.update_epoch, args.error)
+            result.append([args.dataname, seed, accuracy, ARI, NMI])
 
+        output = np.array(result)
+        output = pd.DataFrame(output, columns=["dataset name", "random seed", "accuracy", "ARI", "NMI"])
+        print(output)
 
+    elif args.task == 'denoising':
+        #YD add
+        scDenoising = scDMFK(dataname=args.dataname, output_dir=args.outputdir, dims=args.dims, alpha=args.alpha, sigma=args.sigma, 
+                             learning_rate=args.learning_rate, noise_sd=args.noise_sd,
+                                adaptative=args.adaptive, model=args.model, mode=args.mode)
+        scDenoising.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
 
-
+        try:
+            scDenoising.write(adata, args.outputdir)
+        except: 
+            pass

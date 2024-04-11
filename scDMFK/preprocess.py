@@ -49,16 +49,38 @@ def read_data(filename, sparsify=False, skip_exprs=False):
     return mat, obs, var, uns
 
 
+# def prepro(filename):
+#     data_path = "data/" + filename + "/data.h5"
+#     mat, obs, var, uns = read_data(data_path, sparsify=False, skip_exprs=False)
+#     if isinstance(mat, np.ndarray):
+#         X = np.array(mat)
+#     else:
+#         X = np.array(mat.toarray())
+#     cell_name = np.array(obs["cell_type1"])
+#     cell_type, cell_label = np.unique(cell_name, return_inverse=True)
+#     return X, cell_label
 def prepro(filename):
-    data_path = "data/" + filename + "/data.h5"
-    mat, obs, var, uns = read_data(data_path, sparsify=False, skip_exprs=False)
-    if isinstance(mat, np.ndarray):
-        X = np.array(mat)
-    else:
-        X = np.array(mat.toarray())
-    cell_name = np.array(obs["cell_type1"])
-    cell_type, cell_label = np.unique(cell_name, return_inverse=True)
-    return X, cell_label
+    data_path = "data/" + filename
+
+    try:
+        adata = sc.read(data_path, first_column_names=True)
+        adata.obs['Group'] = None
+    except:
+        mat, obs, var, uns = read_data(data_path, sparsify=False, skip_exprs=False)
+        if isinstance(mat, np.ndarray):
+            X = np.array(mat)
+        else:
+            X = np.array(mat.toarray())
+        cell_name = np.array(obs["cell_type1"])
+        cell_type, cell_label = np.unique(cell_name, return_inverse=True)
+
+        X = np.ceil(X).astype(np.int)
+        adata = sc.AnnData(X)
+        adata.obs['Group'] = cell_label
+
+    print('Successfully preprocessed {} genes and {} cells.'.format(adata.n_vars, adata.n_obs))
+    return adata
+
 
 
 def normalize(adata, highly_genes = None, size_factors=True, normalize_input=True, logtrans_input=True):
@@ -86,3 +108,14 @@ def normalize(adata, highly_genes = None, size_factors=True, normalize_input=Tru
 
     return adata
 
+
+def write_text_matrix(matrix, filename, rownames=None, colnames=None, transpose=False):
+    if transpose:
+        matrix = matrix.T
+        rownames, colnames = colnames, rownames
+
+    pd.DataFrame(matrix, index=rownames, columns=colnames).to_csv(filename,
+                                                                  sep='\t',
+                                                                  index=(rownames is not None),
+                                                                  header=(colnames is not None),
+                                                                  float_format='%.6f')
