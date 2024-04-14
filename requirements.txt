@@ -7,3 +7,4 @@ scikit-learn
 scanpy
 kopt
 pandas
+jgraph

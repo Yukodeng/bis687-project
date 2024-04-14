@@ -1,3 +1,4 @@
+# deep learning 
 import tensorflow.compat.v1 as tf #YD: add.compat.v1 to invert to earlier version
 tf.disable_v2_behavior() #YD
 import keras.backend as K
@@ -5,9 +6,12 @@ from keras.layers import GaussianNoise, Dense, Activation
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from scipy.optimize import linear_sum_assignment as linear_assignment
+# general tools
 import os
 import numpy as np
+from tqdm import tqdm
 from preprocess import *
+from io import *
 
 
 MeanAct = lambda x: tf.clip_by_value(x, 1e-5, 1e6)
@@ -164,7 +168,6 @@ class scDMFK(object):
                                         shape=[self.cluster_num, self.dims[-1]],
                                         dtype=tf.float32, initializer=tf.glorot_uniform_initializer())
 
-        
 
         self.h = self.x
         self.h = GaussianNoise(self.noise_sd, name='input_noise')(self.h)
@@ -224,7 +227,7 @@ class scDMFK(object):
         self.sess.run(init)
         self.latent_repre = np.zeros((X.shape[0], self.dims[-1]))
         pre_index = 0
-        for ite in range(pretrain_epoch):
+        for ite in tqdm(range(pretrain_epoch)):
             while True:
                 if (pre_index + 1) * batch_size > X.shape[0]:
                     last_index = np.array(list(range(pre_index * batch_size, X.shape[0])) + list(
@@ -249,21 +252,20 @@ class scDMFK(object):
                             self.x_count: count_X[(pre_index * batch_size):(
                                     (pre_index + 1) * batch_size)]})
                     self.latent_repre[(pre_index * batch_size):((pre_index + 1) * batch_size)] = latent
-                    # hidden prepresentation omega + b
+                    # hidden representation
                     pre_index += 1
-        print(self.latent_repre)
+        print(pd.DataFrame(self.latent_repre))
 
-    def write(self, adata, colnames=None):
-        #YD added
-        colnames = adata.var_names.values if colnames is None else colnames
-        rownames = adata.obs_names.values
+    def write(self, adata, colnames=None, rownames=None):  #YD added
+        colnames = np.arange(self.dims[-1]) if colnames is None else colnames
+        rownames = adata.obs_names.values if rownames is None else rownames #adata.obs_names.values if rownames is None else rownames
 
-        print('scDMFK: Saving output(s)...')
         data_path = 'data/' + self.output_dir + '/'
         os.makedirs(data_path, exist_ok=True)
-
+        print('scDMFK: Saving output(s) to %s' % data_path)
+        
         write_text_matrix(self.latent_repre,
-                          os.path.join(data_path, 'mean.csv'),
+                          os.path.join(data_path, 'mean-dmfk.csv'),
                           rownames=rownames, colnames=colnames, transpose=False)
 
     def funetrain(self, X, count_X, Y, size_factor, batch_size, funetrain_epoch, update_epoch, error):

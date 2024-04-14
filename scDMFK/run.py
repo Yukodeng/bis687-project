@@ -12,7 +12,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="train", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--task', default='denoising', type=str)
     parser.add_argument("--dataname", default = "Young", type = str)
-    parser.add_argument("--outputdir", type = str)
+    parser.add_argument("--outputdir", default = None, type = str)
+    parser.add_argument('--transpose', default=False, type = bool)
     parser.add_argument("--model", default = "multinomial")
     parser.add_argument("--mode", default="indirect")
     parser.add_argument("--adaptive", default = True)
@@ -37,11 +38,14 @@ if __name__ == "__main__":
     # count_X = X
     # adata = sc.AnnData(X)
     # adata.obs['Group'] = Y
+    
     adata = prepro(args.dataname)
+    if args.transpose:
+        adata = adata.transpose()
     adata = normalize(adata, highly_genes=args.highly_genes, size_factors=True, normalize_input=True, logtrans_input=True)
     X = adata.X.astype(np.float32)
     count_X = X # YD add
-    Y = np.array(adata.obs["Group"]) 
+
     # high_variable = np.array(adata.var.highly_variable.index, dtype=np.int)
     high_variable = adata.var.highly_variable
     count_X = count_X[:, high_variable]
@@ -49,6 +53,7 @@ if __name__ == "__main__":
     
 
     if args.task == 'clustering':
+        Y = np.array(adata.obs["Group"]) 
         cluster_number = int(max(Y) - min(Y) + 1)
 
         random_seed = [1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888, 9999, 10000]
@@ -73,8 +78,7 @@ if __name__ == "__main__":
                              learning_rate=args.learning_rate, noise_sd=args.noise_sd,
                                 adaptative=args.adaptive, model=args.model, mode=args.mode)
         scDenoising.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
+        if args.outputdir is not None:
+            scDenoising.write(adata)
 
-        try:
-            scDenoising.write(adata, args.outputdir)
-        except: 
-            pass
+            

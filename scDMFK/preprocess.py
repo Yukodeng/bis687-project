@@ -78,7 +78,7 @@ def prepro(filename):
         adata = sc.AnnData(X)
         adata.obs['Group'] = cell_label
 
-    print('Successfully preprocessed {} genes and {} cells.'.format(adata.n_vars, adata.n_obs))
+    print('Successfully preprocessed {} cells and {} genes'.format(adata.n_vars, adata.n_obs))
     return adata
 
 
@@ -115,7 +115,7 @@ def write_text_matrix(matrix, filename, rownames=None, colnames=None, transpose=
         rownames, colnames = colnames, rownames
 
     pd.DataFrame(matrix, index=rownames, columns=colnames).to_csv(filename,
-                                                                  sep='\t',
+                                                                #   sep='\t',
                                                                   index=(rownames is not None),
                                                                   header=(colnames is not None),
                                                                   float_format='%.6f')
