@@ -226,24 +226,28 @@ class scDMFK(object):
         self.sess = tf.Session(config=config_)
         self.sess.run(init)
         self.latent_repre = np.zeros((X.shape[0], self.dims[-1]))
+        self.decoded = np.zeros((X.shape[0], self.dims[0]))
         pre_index = 0
         for ite in tqdm(range(pretrain_epoch)):
             while True:
                 if (pre_index + 1) * batch_size > X.shape[0]:
-                    last_index = np.array(list(range(pre_index * batch_size, X.shape[0])) + list(
-                        range((pre_index + 1) * batch_size - X.shape[0])))
-                    _, pre_loss, latent = self.sess.run(
-                        [self.pretrain_op, self.pre_loss, self.latent],
+                    # index of cells in the batch
+                    last_index = np.array(list(range(pre_index * batch_size, X.shape[0])) + 
+                                          list(range((pre_index + 1) * batch_size - X.shape[0])))
+                    
+                    _, pre_loss, latent, decoded = self.sess.run(
+                        [self.pretrain_op, self.pre_loss, self.latent, self.output],
                         feed_dict={
                             self.sf_layer: size_factor[last_index],
                             self.x: X[last_index],
                             self.x_count: count_X[last_index]})
                     self.latent_repre[last_index] = latent
+                    self.decoded[last_index] = decoded
                     pre_index = 0
                     break
                 else:
-                    _, pre_loss, latent = self.sess.run(
-                        [self.pretrain_op, self.pre_loss, self.latent],
+                    _, pre_loss, latent, decoded = self.sess.run(
+                        [self.pretrain_op, self.pre_loss, self.latent, self.output],
                         feed_dict={
                             self.sf_layer: size_factor[(pre_index * batch_size):(
                                     (pre_index + 1) * batch_size)],
@@ -251,11 +255,14 @@ class scDMFK(object):
                                     (pre_index + 1) * batch_size)],
                             self.x_count: count_X[(pre_index * batch_size):(
                                     (pre_index + 1) * batch_size)]})
-                    self.latent_repre[(pre_index * batch_size):((pre_index + 1) * batch_size)] = latent
                     # hidden representation
+                    self.latent_repre[(pre_index * batch_size):((pre_index + 1) * batch_size)] = latent
+                    self.decoded[(pre_index * batch_size):((pre_index + 1) * batch_size)] = decoded
                     pre_index += 1
-        print(pd.DataFrame(self.latent_repre))
-
+        # print(pd.DataFrame(self.latent_repre))
+        print(pd.DataFrame(self.decoded))
+        
+        
     def write(self, adata, colnames=None, rownames=None):  #YD added
         colnames = np.arange(self.dims[-1]) if colnames is None else colnames
         rownames = adata.obs_names.values if rownames is None else rownames #adata.obs_names.values if rownames is None else rownames
