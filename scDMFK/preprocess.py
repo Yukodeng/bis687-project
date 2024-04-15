@@ -1,7 +1,12 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-import utils as utils
+
+try:
+    import utils as utils
+except:
+    import scDMFK.utils as utils
+    
 import numpy as np
 import h5py
 import scipy as sp
@@ -67,18 +72,17 @@ def prepro(filename):
         adata.obs['Group'] = None
     except:
         mat, obs, var, uns = read_data(data_path, sparsify=False, skip_exprs=False)
-        if isinstance(mat, np.ndarray):
-            X = np.array(mat)
-        else:
-            X = np.array(mat.toarray())
+        if not isinstance(mat, np.ndarray):
+            # X = np.array(mat.toarray())
+            X = mat.toarray() #YD change
         cell_name = np.array(obs["cell_type1"])
         cell_type, cell_label = np.unique(cell_name, return_inverse=True)
 
-        X = np.ceil(X).astype(np.int)
+        # X = np.ceil(X).astype(np.int)
         adata = sc.AnnData(X)
         adata.obs['Group'] = cell_label
 
-    print('Successfully preprocessed {} cells and {} genes'.format(adata.n_vars, adata.n_obs))
+    print('Successfully preprocessed {} genes and {} cells'.format(adata.n_vars, adata.n_obs))
     return adata
 
 

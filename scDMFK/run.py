@@ -7,9 +7,8 @@ import scanpy as sc # "scanpy.api" has been deprecated in newer versions
 
 
 if __name__ == "__main__":
-    print("begin training")
-
     parser = argparse.ArgumentParser(description="train", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    
     parser.add_argument('--task', default='denoising', type=str)
     parser.add_argument("--dataname", default = "Young", type = str)
     parser.add_argument("--outputdir", default = None, type = str)
@@ -45,13 +44,13 @@ if __name__ == "__main__":
     adata = normalize(adata, highly_genes=args.highly_genes, size_factors=True, normalize_input=True, logtrans_input=True)
     X = adata.X.astype(np.float32)
     count_X = X # YD add
-
+    
     # high_variable = np.array(adata.var.highly_variable.index, dtype=np.int)
     high_variable = adata.var.highly_variable
     count_X = count_X[:, high_variable]
     size_factor = np.array(adata.obs.size_factors).reshape(-1, 1).astype(np.float32)
     
-
+    print("begin training")
     if args.task == 'clustering':
         Y = np.array(adata.obs["Group"]) 
         cluster_number = int(max(Y) - min(Y) + 1)
@@ -78,6 +77,7 @@ if __name__ == "__main__":
                              learning_rate=args.learning_rate, noise_sd=args.noise_sd,
                                 adaptative=args.adaptive, model=args.model, mode=args.mode)
         scDenoising.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
+        
         if args.outputdir is not None:
             scDenoising.write(adata)
 
