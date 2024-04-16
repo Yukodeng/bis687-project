@@ -16,7 +16,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", default = "multinomial")
     parser.add_argument("--mode", default="indirect")
     parser.add_argument("--adaptive", default = True)
-    parser.add_argument("--dims", default = [500, 256, 64, 32])
+    parser.add_argument("--dims", default = [64, 32, 64]) # YD change from [500, 64, 32]
     parser.add_argument("--highly_genes", default = 500)
     parser.add_argument("--alpha", default = 0.001, type = float)
     parser.add_argument("--sigma", default = 1.0, type = float)
@@ -48,6 +48,8 @@ if __name__ == "__main__":
     # high_variable = np.array(adata.var.highly_variable.index, dtype=np.int)
     high_variable = adata.var.highly_variable
     count_X = count_X[:, high_variable]
+    input_size = adata.n_vars
+    output_size = input_size
     size_factor = np.array(adata.obs.size_factors).reshape(-1, 1).astype(np.float32)
     
     print("begin training")
@@ -61,8 +63,9 @@ if __name__ == "__main__":
         for seed in random_seed:
             np.random.seed(seed)
             tf.reset_default_graph()
-            scClustering = scDMFK(args.dataname, args.outputdir, args.dims, cluster_number, args.alpha, args.sigma, args.learning_rate, args.noise_sd,
-                                adaptative=args.adaptive, model=args.model, mode=args.mode)
+            scClustering = scDMFK(args.dataname, args.outputdir, input_size, output_size,
+                                  args.dims, cluster_number, args.alpha, args.sigma, args.learning_rate, args.noise_sd,
+                                  adaptative=args.adaptive, model=args.model, mode=args.mode)
             scClustering.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
             accuracy, ARI, NMI = scClustering.funetrain(X, count_X, Y, size_factor, args.batch_size, args.funetrain_epoch, args.update_epoch, args.error)
             result.append([args.dataname, seed, accuracy, ARI, NMI])
@@ -73,12 +76,18 @@ if __name__ == "__main__":
 
     elif args.task == 'denoising':
         #YD add
-        scDenoising = scDMFK(dataname=args.dataname, output_dir=args.outputdir, dims=args.dims, alpha=args.alpha, sigma=args.sigma, 
-                             learning_rate=args.learning_rate, noise_sd=args.noise_sd,
-                                adaptative=args.adaptive, model=args.model, mode=args.mode)
-        scDenoising.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
+        scDenoising = scDMFK(output_dir=args.outputdir,
+                             input_size=input_size, output_size=output_size, dims=args.dims, 
+                             alpha=args.alpha, sigma=args.sigma, 
+                             learning_rate=args.learning_rate,
+                             noise_sd=args.noise_sd,
+                             adaptative=args.adaptive, 
+                             distribution=args.model, mode=args.mode)
+        scDenoising.pretrain(adata, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
+        scDenoising.predict(adata)
+        print(adata.X * adata.raw.X.sum(1)[:, np.newaxis])
         
         if args.outputdir is not None:
             scDenoising.write(adata)
-
+    
             

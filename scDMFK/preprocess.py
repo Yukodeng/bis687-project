@@ -104,11 +104,11 @@ def normalize(adata, highly_genes = None, size_factors=True, normalize_input=Tru
     if logtrans_input:
         sc.pp.log1p(adata)
 
-    if highly_genes != None:
-        sc.pp.highly_variable_genes(adata, min_mean=0.0125, max_mean=3, min_disp=0.5, n_top_genes = highly_genes, subset=True)
-
     if normalize_input:
         sc.pp.scale(adata)
+          
+    highly_genes = adata.n_vars if None else highly_genes
+    sc.pp.highly_variable_genes(adata, min_mean=0.0125, max_mean=3, min_disp=0.5, n_top_genes = highly_genes, subset=True)
 
     return adata
 
