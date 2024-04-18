@@ -1,47 +1,43 @@
-## Deep count autoencoder for denoising scRNA-seq data
+## scRNA-seq Data Denoising and Impact on Downstream Analysis
 
-A deep count autoencoder network to denoise scRNA-seq data and remove the dropout effect by taking the count structure, overdispersed nature and sparsity of the data into account using a deep autoencoder with zero-inflated negative binomial (ZINB) loss function.
+A comparison of approaches to denoise and impute single cell RNA sequencing (scRNA-seq) data to account for technical errors that arise from false "dropouts" due to low RNA capture rates of expressed genes. Our review include several methods that utilizes Deep learning and machine learning methods, as well as statistical assumptions of the gene expression data distribution such as multinomial, poisson, and zero-inflated negative binomial (ZINB). 
 
-See our [manuscript](https://www.nature.com/articles/s41467-018-07931-2) and [tutorial](https://nbviewer.ipython.org/github/theislab/dca/blob/master/tutorial.ipynb) for more details.
+Further downstream analysis such as clustering, differentially expressed gene analysis, and classification are carried out on both real-word datasets (RWDs) and simulation data to evluate and compare different methods.
+
+See our [demo](https://github.com/Yukodeng/bis687-project/blob/main/demo.ipynb) for more details.
+
 
 ### Installation
 
 #### pip
 
-For a traditional Python installation of the count autoencoder and the required packages, use
+The project uses Python 3.8.18 with dependencies that can be installed using the below command line:
 
 ```
-$ pip install dca
+$ pip install -r requirements.txt
 ```
 
-#### conda
+### Data
 
-Another approach for installing count autoencoder and the required packages is to use [Conda](https://conda.io/docs/) (most easily obtained via the [Miniconda Python distribution](https://conda.io/miniconda.html)). Afterwards run the following commands.
+Real-world single-cell RNA datasets are available in the `data/` folder, which include:
 
-```
-$ conda install -c bioconda dca
-```
+- Single-cell and bulk RNA-seq data for definitive endoderm differentiation experiment by Chu et al. (2016), which are available at the Gene Expression Omnibus (GEO) under accession code GSE75748. 
 
-### Usage
+- Multiple selective mouse organ tissues (Qx_Bladder, Qx_Kidney, Qx_LimbMuscle, and Qx_Spleen), which can be downloaded from GEO (GSE109774). 
 
-You can run the autoencoder from the command line:
+- More to be included..
 
-`dca matrix.csv results`
-
-where `matrix.csv` is a CSV/TSV-formatted raw count matrix with genes in rows and cells in columns. Cell and gene labels are mandatory. 
 
 ### Results
 
-Output folder contains the main output file (representing the mean parameter of ZINB distribution) as well as some additional matrices in TSV format:
+Output of denoising methods contains the main output file (representing the recovered UMI counts) as well as some additional matrices in CSV format:
 
-- `mean.tsv` is the main output of the method which represents the mean parameter of the ZINB distribution. This file has the same dimensions as the input file (except that the zero-expression genes or cells are excluded). It is formatted as a `gene x cell` matrix. Additionally, `mean_norm.tsv` file contains the library size-normalized expressions of each cell and gene. See `normalize_total` function from [Scanpy](https://scanpy.readthedocs.io/en/stable/api/scanpy.pp.normalize_total.html) for the details about the default library size normalization method used in DCA.
+- `mean-<method-name>.csv` is the main output of the method which represents the recovered. This file has the same dimensions as the input file (except that the zero-expression genes or cells are excluded). It is formatted as a `gene x cell` matrix. 
 
-- `pi.tsv` and `dispersion.tsv` files represent dropout probabilities and dispersion for each cell and gene. Matrix dimensions are same as `mean.tsv` and the input file.
+- `latent-<method-name>.csv` files represent the lower-dimensional latent representations of the original count matrix for methods that deploy an autoencoder framework for scRNA-seq data imputation,  which denotes the activations of bottleneck neurons. Matrix dimensions are `hidden_layer_size` x `n_cell` (hidden layer size is 32 by default).
 
-- `reduced.tsv` file contains the hidden representation of each cell (in a 32-dimensional space by default), which denotes the activations of bottleneck neurons.
 
-Use `-h` option to see all available parameters and defaults.
 
-### Hyperparameter optimization
+### Conclusion
 
-You can run the autoencoder with `--hyper` option to perform hyperparameter search.
+TBC

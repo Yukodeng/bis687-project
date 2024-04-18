@@ -8,3 +8,4 @@ scanpy
 kopt
 pandas
 jgraph
+colorcet

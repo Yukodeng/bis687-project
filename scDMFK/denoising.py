@@ -31,7 +31,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     X, Y = prepro(args.dataname)
-    ## np.ceil对元素向上取整
     X = np.ceil(X).astype(np.int)
     count_X = X
 
@@ -49,7 +48,7 @@ if __name__ == "__main__":
 
     for seed in random_seed:
         np.random.seed(seed)
-        ##重置默认图
+        ##reset to defualt
         tf.reset_default_graph()
         scClustering = scDMFK(args.dataname, args.dims, cluster_number, args.alpha, args.sigma, args.learning_rate, args.noise_sd,
                              adaptative=args.adaptive, model=args.model, mode=args.mode)
