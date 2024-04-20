@@ -30,11 +30,18 @@ Real-world single-cell RNA datasets are available in the `data/` folder, which i
 
 ### Results
 
-Output of denoising methods contains the main output file (representing the recovered UMI counts) as well as some additional matrices in CSV format:
+Outputs of denoising algorithms include the main denoised output (representing the recovered UMI counts), as well as some additional matrices, in the following formats:
 
-- `mean-<method-name>.csv` is the main output of the method which represents the recovered. This file has the same dimensions as the input file (except that the zero-expression genes or cells are excluded). It is formatted as a `gene x cell` matrix. 
+- `results.h5ad` file contains the raw UMI counts (dimension=`gene x cell`), the denoised output (dimension matching the original input), the lower-dimensional latent representation of the original count matrix (hidden layer size is `32` by default), and other attributes of the gene expression matrix.
 
-- `latent-<method-name>.csv` files represent the lower-dimensional latent representations of the original count matrix for methods that deploy an autoencoder framework for scRNA-seq data imputation,  which denotes the activations of bottleneck neurons. Matrix dimensions are `hidden_layer_size` x `n_cell` (hidden layer size is 32 by default).
+You can load the file into python using:
+
+```
+import scanpy as sc
+adata = sc.read_h5ad("../results.h5ad")
+```
+
+- `mean.tsv` is the main output of the method which represents the recovered UMI count matrix. This file has the same dimensions as the input file (except that the zero-expression genes or cells are excluded). It is formatted as a `gene x cell` matrix. 
 
 
 

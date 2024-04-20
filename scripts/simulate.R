@@ -1,5 +1,6 @@
 # Warning! R 3.4 and Bioconductor 3.5 are required for splatter!
 
+# install.packages("BiocInstaller", repos="https://bioconductor.org/packages/3.6/bioc")
 library(BiocInstaller)
 biocLite('splatter')
 library(splatter) # requires splatter >= 1.2.0
@@ -37,9 +38,9 @@ save.sim <- function(sim, dir) {
 }
 
 
-for (dropout in c(0, 1, 3, 5)) {
-  for (ngroup in c(1, 2, 3, 6)) {
-    for(swap in c(F, T)) {
+for (dropout in c(1, 5)) {
+  for (ngroup in c(2, 6)) {
+    for(swap in c(F)) {
 
       nGenes <- 200
       batchCells <- 2000
@@ -74,7 +75,7 @@ for (dropout in c(0, 1, 3, 5)) {
       save.sim(sim, dirname)
 
 
-      dirname <- paste0('sim/group', ngroup, '/dropout', dropout, ifelse(swap, '/swap', ''))
+      dirname <- paste0('data/group', ngroup, '/dropout', dropout, ifelse(swap, '/swap', ''))
       if (!dir.exists(dirname))
         dir.create(dirname, showWarnings=F, recursive=T)
 

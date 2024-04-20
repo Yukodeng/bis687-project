@@ -3,6 +3,7 @@ from network import *
 from utils import *
 import argparse
 import pandas as pd
+import numpy as np
 import scanpy as sc # "scanpy.api" has been deprecated in newer versions
 
 
@@ -17,42 +18,33 @@ if __name__ == "__main__":
     parser.add_argument("--mode", default="indirect")
     parser.add_argument("--adaptive", default = True)
     parser.add_argument("--dims", default = [64, 32, 64]) # YD change from [500, 64, 32]
-    parser.add_argument("--highly_genes", default = 500)
+    parser.add_argument("--highly_genes", default = None)
+    parser.add_argument("--subset", default = False)
     parser.add_argument("--alpha", default = 0.001, type = float)
     parser.add_argument("--sigma", default = 1.0, type = float)
     parser.add_argument("--theta", default=1.0, type=float)
     parser.add_argument("--learning_rate", default = 0.0001, type = float)
-    parser.add_argument("--batch_size", default = 256, type = int)
+    parser.add_argument("--batch_size", default = 128, type = int)
     parser.add_argument("--update_epoch", default = 10, type = int)
     parser.add_argument("--pretrain_epoch", default = 1000, type = int)
     parser.add_argument("--funetrain_epoch", default = 2000, type = int)
     parser.add_argument("--noise_sd", default = 1.5)
     parser.add_argument("--error", default = 0.001, type = float)
     parser.add_argument("--gpu_option", default = "0")
+    parser.add_argument("--tensorboard", default = False, type = bool)
+    parser.add_argument("--verbose", default = False, type= bool)
 
     args = parser.parse_args()
 
-    # X, Y = prepro(args.dataname)
-    # X = np.ceil(X).astype(np.int)
-    # count_X = X
-    # adata = sc.AnnData(X)
-    # adata.obs['Group'] = Y
+    # read in data
+    adata = prepro(args.dataname, args.transpose)
+    adata = normalize(adata, highly_genes=args.highly_genes, highly_subset=args.subset,
+                      size_factors=True, normalize_input=True, logtrans_input=True)
     
-    adata = prepro(args.dataname)
-    if args.transpose:
-        adata = adata.transpose()
-    adata = normalize(adata, highly_genes=args.highly_genes, size_factors=True, normalize_input=True, logtrans_input=True)
-    X = adata.X.astype(np.float32)
-    count_X = X # YD add
-    
-    # high_variable = np.array(adata.var.highly_variable.index, dtype=np.int)
-    high_variable = adata.var.highly_variable
-    count_X = count_X[:, high_variable]
     input_size = adata.n_vars
     output_size = input_size
     size_factor = np.array(adata.obs.size_factors).reshape(-1, 1).astype(np.float32)
     
-    print("begin training")
     if args.task == 'clustering':
         Y = np.array(adata.obs["Group"]) 
         cluster_number = int(max(Y) - min(Y) + 1)
@@ -62,10 +54,10 @@ if __name__ == "__main__":
 
         for seed in random_seed:
             np.random.seed(seed)
-            tf.reset_default_graph()
+            
             scClustering = scDMFK(args.dataname, args.outputdir, input_size, output_size,
-                                  args.dims, cluster_number, args.alpha, args.sigma, args.learning_rate, args.noise_sd,
-                                  adaptative=args.adaptive, model=args.model, mode=args.mode)
+                                args.dims, cluster_number, args.alpha, args.sigma, args.learning_rate, args.noise_sd,
+                                adaptative=args.adaptive, model=args.model, mode=args.mode)
             scClustering.pretrain(X, count_X, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
             accuracy, ARI, NMI = scClustering.funetrain(X, count_X, Y, size_factor, args.batch_size, args.funetrain_epoch, args.update_epoch, args.error)
             result.append([args.dataname, seed, accuracy, ARI, NMI])
@@ -76,18 +68,22 @@ if __name__ == "__main__":
 
     elif args.task == 'denoising':
         #YD add
+        np.random.seed(42)
+
         scDenoising = scDMFK(output_dir=args.outputdir,
-                             input_size=input_size, output_size=output_size, dims=args.dims, 
-                             alpha=args.alpha, sigma=args.sigma, 
-                             learning_rate=args.learning_rate,
-                             noise_sd=args.noise_sd,
-                             adaptative=args.adaptive, 
-                             distribution=args.model, mode=args.mode)
-        scDenoising.pretrain(adata, size_factor, args.batch_size, args.pretrain_epoch, args.gpu_option)
+                            input_size=input_size, output_size=output_size, dims=args.dims, 
+                            alpha=args.alpha, sigma=args.sigma, 
+                            learning_rate=args.learning_rate,
+                            noise_sd=args.noise_sd,
+                            adaptative=args.adaptive, 
+                            distribution=args.model, 
+                            mode=args.mode)
+        scDenoising.pretrain(adata, size_factor, 
+                             args.batch_size, args.pretrain_epoch,
+                             args.gpu_option, args.tensorboard)
         scDenoising.predict(adata)
-        print(adata.X * adata.raw.X.sum(1)[:, np.newaxis])
-        
+
         if args.outputdir is not None:
             scDenoising.write(adata)
-    
             
+    

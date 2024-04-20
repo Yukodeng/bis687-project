@@ -59,7 +59,7 @@ def poisson_loss(y_true, y_pred):
 # learning rates of theta and network weights
 class NB(object):
     def __init__(self, theta=None, masking=False, scope='nbinom_loss/',
-                 scale_factor=1.0, debug=False):
+                scale_factor=1.0, debug=False):
 
         # for numerical stability
         self.eps = 1e-10
@@ -68,10 +68,12 @@ class NB(object):
         self.scope = scope
         self.masking = masking
         self.theta = theta
+        
 
     def loss(self, y_true, y_pred, mean=True):
         scale_factor = self.scale_factor
         eps = self.eps
+
 
         with tf.name_scope(self.scope):
             y_true = tf.cast(y_true, tf.float32)

@@ -1,4 +1,6 @@
 *.h5
 *.tsv
-data/endoderm/endoderm.csv
+*.h5ad
 sc-env/
+data/endoderm/results/
+data/endoderm/endoderm.csv
