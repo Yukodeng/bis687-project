@@ -1,8 +1,10 @@
 # deep learning 
 import tensorflow as tf 
+import tensorflow.python.util.deprecation as deprecation
 # import tensorflow._api.v2.compat.v1 as tf
 # tf.disable_v2_behavior()
 tf.compat.v1.disable_eager_execution()
+deprecation._PRINT_DEPRECATION_WARNINGS = False
 
 from tensorflow import keras
 import keras.backend as K
@@ -12,6 +14,7 @@ from keras.models import Model
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from scipy.optimize import linear_sum_assignment as linear_assignment
+
 # general tools
 import os
 import random
@@ -101,14 +104,25 @@ class mMSE(wMSE):
         mask_loss = tf.sign(self.x) * tf.square(y_true - y_pred)
         return tf.reduce_mean(mask_loss)
 
+    
 class MultiNom(object):
-    def __init__(self):
-        pass
+    def __init__(self, mode='direct'):
+        self.mode=mode
+    
     def loss(self, y_true, y_pred):
-        
-        loss = tf.reduce_mean(-y_true * tf.math.log(tf.clip_by_value(y_pred, 1e-12, 1.0)))   
-        return loss
+        result = tf.reduce_mean(-y_true * tf.math.log(tf.clip_by_value(y_pred, 1e-12, 1.0)))
+        return result
 
+class IndirMultiNom(object):
+    def __init__(self, mode='indirect'):
+        # self.pi = pi
+        self.mode = mode
+    
+    def loss(self, y_true, y_pred):
+        # Compute P using y_pred(V) and pi
+        # P = tf.transpose(tf.transpose(self.pi * y_pred) / tf.reduce_sum(self.pi * y_pred, axis=1))
+        loss = tf.reduce_mean(-y_true * tf.math.log(tf.clip_by_value(y_pred, 1e-12, 1.0)))
+        return loss
 
 class NB(object):
     def __init__(self, theta=None, scale_factor=1.0, mask=False, debug=False, mean=False):
@@ -184,13 +198,13 @@ class ZINB(NB):
         return result
 
 
+## Main autoencoder structure
 class scDMFK():
-    def __init__(self, output_dir, input_size, output_size,
-                dims=[256,64,32,64,256], alpha=0.001, sigma=1.0, learning_rate=0.0001,
+    def __init__(self, input_size, output_size,
+                dims=[64,32,64], alpha=0.001, sigma=1.0, learning_rate=0.001,
                 theta=1, cluster_num=1, noise_sd=1.5, init='glorot_uniform', act='relu', adaptative = True,
                 distribution='multinomial', mode='indirect'):
         # super().__init__()
-        self.output_dir = output_dir
         self.input_size = input_size
         self.output_size = output_size
         self.dims = dims
@@ -209,7 +223,7 @@ class scDMFK():
         self.loss = None
         self.optimizer = None
         
-        print(f"Creating new scDMFK model")
+        # print("Creating new scDMFK model")
         # input layer
         self.x =  Input(shape=(self.input_size,), name='original')
         self.x_count = Input(shape=(self.input_size,), name='count')
@@ -222,7 +236,7 @@ class scDMFK():
             center_idx = int(np.floor(len(self.dims) / 2.0))
             if i == center_idx:
                 layer_name = 'hidden'
-                self.latent = Dense(units=self.dims[-1], kernel_initializer=self.init,
+                self.latent = Dense(units=hid_size, kernel_initializer=self.init,
                                     name=layer_name)(self.h)  # hidden layer, features are extracted from here
                 self.h = self.latent
             elif i < center_idx:
@@ -232,7 +246,7 @@ class scDMFK():
                 self.h = Activation(self.act)(self.h)
             else:
                 layer_name = 'decoder%s' % (i-center_idx)
-                self.h = Dense(units=self.dims[i], activation=self.act, kernel_initializer=self.init, 
+                self.h = Dense(units=hid_size, activation=self.act, kernel_initializer=self.init, 
                             name=layer_name)(self.h)    
         self.build_output()
         
@@ -247,11 +261,11 @@ class scDMFK():
                 self.output = tf.transpose(tf.transpose(self.pi * self.output) / tf.reduce_sum(self.pi * self.output, axis=1))    
                 # pi computation as a parallel output
                 # self.pi_layer = PiLayer(output_size=self.output_size, activation='sigmoid')
-                # self.pi = self.pi_layer(self.h)      
+                # self.pi = self.pi_layer(self.h)
+                multinom = IndirMultiNom()
             else:
                 self.output = Dense(units=self.output_size, activation=tf.nn.softmax, kernel_initializer=self.init, name='pi')(self.h)
-
-            multinom = MultiNom()
+                multinom = MultiNom()
             self.loss = multinom.loss
             
         elif self.distribution == "ZINB":       
@@ -297,18 +311,18 @@ class scDMFK():
         
         return adata if copy else None
 
-    def write(self, adata, colnames=None, rownames=None):  #YD added
+    def write(self, adata, output_dir, colnames=None, rownames=None):  #YD added
         colnames = adata.var_names.values if colnames is None else colnames
         rownames = adata.obs_names.values if rownames is None else rownames 
         
-        data_path = self.output_dir
+        data_path = output_dir
         os.makedirs(data_path, exist_ok=True) 
         filename = 'results-%s.h5ad'%self.distribution
         
-        adata.write(os.path.join(data_path, filename))
+        adata.write(os.path.join(data_path, filename), compression='gzip')
 
 
-    def pretrain(self, adata, size_factor, batch_size, pretrain_epoch, gpu_option,
+    def pretrain(self, adata, size_factor, batch_size=64, pretrain_epoch=100, gpu_option='0',
                  tensorboard=False):
         print("Begin the pretraining...")
         
@@ -316,8 +330,8 @@ class scDMFK():
         random.seed(42)
         np.random.seed(42)
         os.environ['PYTHONHASHSEED'] = '0'
-        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-        os.environ["CUDA_VISIBLE_DEVICES"] = gpu_option
+        # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        # os.environ["CUDA_VISIBLE_DEVICES"] = gpu_option
 
         # Set up the TensorFlow session with specific configurations for parallelism 
         config_ = tf.compat.v1.ConfigProto()
@@ -331,31 +345,31 @@ class scDMFK():
         
         callback = []
         if tensorboard:
-            logdir = os.path.join('results', 'tb')
+            logdir = os.path.join('results', 'tb', str(batch_size)+str(pretrain_epoch))
             tensorboard = TensorBoard(log_dir=logdir)    
             callback.append(tensorboard)
- 
+
         self.optimizer = tf.optimizers.Adam(self.learning_rate)
         self.model.compile(optimizer=self.optimizer, loss=self.loss)
         
         inputs = {'original': adata.raw.X, 'count': adata.X , 'size_factors': size_factor}
-        output = adata.raw.X
+        output = adata.raw.X[:, [name in adata.var_names for name in adata.raw.var_names]]
         
         self.losses = self.model.fit(inputs, output,
                         epochs=pretrain_epoch,
                         batch_size=batch_size,
-                        validation_split=0.1,
+                        shuffle=True,
+                        validation_split=0.2,
                         callbacks=callback,
-                        verbose=2)
+                        verbose=0)
         
         print("Average loss: ", np.average(self.losses.history['loss']))
     
-    def print_summary(self):
+    def print_summary(self): #autoencoder layer-level summary
         self.model.summary()
         
-    def print_train_history(self, save=False): #plot the training history
+    def print_train_history(self, output_dir, save=False): #plot the training history
         import matplotlib.pyplot as plt
-        %config InlineBackend.figure_format='retina'
 
         plt.plot(self.losses.history['loss'], label='Training Loss')
         plt.plot(self.losses.history['val_loss'], label='Validation Loss')
@@ -363,7 +377,7 @@ class scDMFK():
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         if save:
-            plt.savefig(os.path.join(self.output_dir, 'scdm-history-%s'%(self.distribution)))
+            plt.savefig(os.path.join(output_dir, 'scdm-history-%s'%(self.distribution)))
         plt.show()
 
     def funetrain(self, X, count_X, Y, size_factor, batch_size, funetrain_epoch, update_epoch, error):

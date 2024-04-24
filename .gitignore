@@ -2,5 +2,7 @@
 *.tsv
 *.h5ad
 sc-env/
+results/tb/
 data/endoderm/results/
 data/endoderm/endoderm.csv
+# data/endoderm/endoder*

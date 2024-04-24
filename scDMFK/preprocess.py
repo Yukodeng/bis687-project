@@ -109,7 +109,8 @@ def normalize(adata, highly_genes = None, highly_subset=False, size_factors=True
         sc.pp.scale(adata)
 
     sc.pp.highly_variable_genes(adata, min_mean=0.0125, max_mean=3, min_disp=0.5, n_top_genes=highly_genes, subset=highly_subset)
-
+    print("Selected {} genes and {} cells".format(adata.n_vars, adata.n_obs))
+    
     return adata
 
 
