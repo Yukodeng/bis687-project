@@ -15,7 +15,7 @@ from sklearn.manifold import TSNE
 # clustering
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_sscore, adjusted_rand_score, normalized_mutual_info_score
+from sklearn.metrics import silhouette_score, adjusted_rand_score, normalized_mutual_info_score
 
 
 def write_text_matrix(matrix, filename, rownames=None, colnames=None, transpose=False):
@@ -24,10 +24,10 @@ def write_text_matrix(matrix, filename, rownames=None, colnames=None, transpose=
         rownames, colnames = colnames, rownames
 
     pd.DataFrame(matrix, index=rownames, columns=colnames).to_csv(filename,
-                                                                  sep='\t',
-                                                                  index=(rownames is not None),
-                                                                  header=(colnames is not None),
-                                                                  float_format='%.6f')
+                                                                sep='\t',
+                                                                index=(rownames is not None),
+                                                                header=(colnames is not None),
+                                                                float_format='%.6f')
     
 
 def get_embedding(data):
@@ -39,6 +39,86 @@ def get_embedding(data):
                             metric='correlation').fit_transform(data_scaled)
     return embedding
 
+
+def calculate_cluster_results(data, true_labels, seed):
+    if not isinstance(data, np.ndarray):
+        data = np.array(data)
+    
+    n_clusters = len(np.unique(true_labels))
+    np.random.seed(seed)
+    
+    # get UMAP 2-D embedding
+    embedding = get_embedding(data)
+    # draw_umap(embedding, true_labels)
+    
+    # K-means for clustering umi embedings
+    kmeans = KMeans(n_clusters=n_clusters).fit(embedding)
+    labels = kmeans.labels_
+
+    # Calculate metrics
+    ari = adjusted_rand_score(true_labels, labels)
+    nmi = normalized_mutual_info_score(true_labels, labels)
+    sc = silhouette_score(embedding, labels)
+
+    print(f'Adjusted Rand Index: {ari}')
+    print(f'Normalized Mutual Information: {nmi}')
+    print(f'Silhouette Coefficient: {sc}')
+    
+    return ari, nmi, sc, embedding
+
+
+def draw_umap(embedding, label, figname=None, output_dir=None, figsize=(15, 10), labelsize=12):  
+
+    palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
+    fig, ax = plt.subplots(figsize=figsize)
+
+    plt.xlim([np.min(embedding[:, 0]) - 0.5, np.max(embedding[:, 0]) + 1.5])
+    plt.ylim([np.min(embedding[:, 1]) - 0.5, np.max(embedding[:, 1]) + 0.5])
+    plt.xlabel('UMAP 1', fontsize=labelsize)
+    plt.ylabel('UMAP 2', fontsize=labelsize)
+    plt.title(figname)
+
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    
+    sns.scatterplot(x=embedding[:, 0], y=embedding[:, 1], hue=label, 
+                hue_order=list(np.unique(label)), palette=palette)
+    leg = plt.legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
+    leg.get_frame().set_alpha(0.9)
+    plt.setp(ax, xticks=[], yticks=[])
+    plt.show()
+    if output_dir is not None:
+        import os
+        fig.savefig(os.path.join(output_dir, figname+ '.png'))
+
+    
+def draw_multiple_umap(embeddings, label, names=None, output_dir=None, denoise_method=None, labelsize=14):
+    
+    if not isinstance(embeddings, list):
+        embeddings = [embeddings]
+    names = [names for i in range(len(embeddings))] if names is None else names
+    
+    palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
+    fig, ax = plt.subplots(1, len(embeddings), figsize=(len(embeddings)*12.5, 10))
+
+    for (i, embed), figname in zip(enumerate(embeddings), names):
+        ax[i].set_xlim([np.min(embed[:, 0]) - 0.5, np.max(embed[:, 0]) + 1.5])
+        ax[i].set_ylim([np.min(embed[:, 1]) - 0.5, np.max(embed[:, 1]) + 0.5])
+        ax[i].set_xlabel('UMAP 1', fontsize=labelsize)
+        ax[i].set_ylabel('UMAP 2', fontsize=labelsize)
+        ax[i].set_title(figname)
+        ax[i].spines['right'].set_visible(False)
+        ax[i].spines['top'].set_visible(False)
+        
+        sns.scatterplot(x=embed[:, 0], y=embed[:, 1], hue=label, 
+                    hue_order=list(np.unique(label)), palette=palette, ax=ax[i])
+        leg = ax[i].legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
+        leg.get_frame().set_alpha(0.9)
+        plt.setp(ax[i], xticks=[], yticks=[])
+    plt.show()
+    if output_dir is not None:
+        import os
+        fig.savefig(os.path.join(output_dir, denoise_method+'-results.png'))
 
 class Clustering():
     def __init__(self, adata, denoise_method, 
@@ -70,16 +150,15 @@ class Clustering():
             
                 print("seed: %d  Evaluating clustering results for %s data..." % (seed, name))
                 
-                ari, nmi, sc, embedding = self.calculate_cluster_results(data, name, seed)
+                ari, nmi, sc, embedding = calculate_cluster_results(data, self.label, seed)
                 result.append([self.denoise_method, name, seed, ari, nmi, sc])
-                figname = '-'.join(str(s).lower() for s in [self.denoise_method, name, seed]) + '.png'
+                figname = '-'.join(str(s).lower() for s in [self.denoise_method, name, seed])
                 self.fignames.append(figname)
                 self.embeddings.append(embedding)
                 
         self.output = np.array(result)
         self.output = pd.DataFrame(self.output, columns=["denoise method", "dataname", "random seed", "ARI", "NMI", "SC"])
         
-    
     def get_output(self):
         return self.output
     
@@ -93,149 +172,60 @@ class Clustering():
         
         embeddings = list(compress(self.embeddings, inds))
         fignames = list(compress(self.fignames,inds))
+        label = self.label
         
         if same_figure:
-            self.draw_multiple_umap(embeddings, fignames, output_dir)
+            draw_multiple_umap(embeddings, label, fignames, output_dir)
         else:
             for figname, emb in zip(fignames, embeddings):
-                self.draw_umap(emb, figname, output_dir)
-            
-            
-    def calculate_cluster_results(self, data, name, seed):
-        if not isinstance(data, np.ndarray):
-            data = np.array(data)
-        
-        if seed is not None:
-            np.random.seed(seed) #set random seet for reproduceable results
+                draw_umap(emb, label, figname, output_dir, self.denoise_method)
 
-        # get UMAP 2-D embedding
-        embedding = get_embedding(data)
-        # K-means for clustering umi embedings
-        kmeans = KMeans(n_clusters=self.n_clusters, n_init=10).fit(embedding)
-        labels = kmeans.labels_
 
-        # Calculate metrics
-        ari = adjusted_rand_score(self.label, labels)
-        nmi = normalized_mutual_info_score(self.label, labels)
-        sc = silhouette_score(embedding, labels)
-        print(f'Adjusted Rand Index: {ari}')
-        print(f'Normalized Mutual Information: {nmi}')
-        print(f'Silhouette Coefficient: {sc}')
-        
-        return ari, nmi, sc, embedding
+# def draw_umap(embedding, label):
+#     contour_c = '#444444'
+#     labelsize = 25
+#     label = label
+#     palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
 
-    def draw_umap(self, embedding, figname, output_dir=None, figsize=(15, 10), labelsize=12):  
-        label = self.label
+#     fig, ax = plt.subplots(figsize=(20, 15))
 
-        palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
-        fig, ax = plt.subplots(figsize=figsize)
-
-        plt.xlim([np.min(embedding[:, 0]) - 0.5, np.max(embedding[:, 0]) + 1.5])
-        plt.ylim([np.min(embedding[:, 1]) - 0.5, np.max(embedding[:, 1]) + 0.5])
-        plt.xlabel('UMAP 1', fontsize=labelsize)
-        plt.ylabel('UMAP 2', fontsize=labelsize)
-        plt.title(figname[:-4])
-
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        
-        sns.scatterplot(x=embedding[:, 0], y=embedding[:, 1], hue=label, 
-                    hue_order=list(np.unique(label)), palette=palette)
-        leg = plt.legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
-        leg.get_frame().set_alpha(0.9)
-        plt.setp(ax, xticks=[], yticks=[])
-        plt.show()
-        if output_dir is not None:
-            import os
-            fig.savefig(os.path.join(output_dir, figname))
+#     plt.xlim([np.min(embedding[:, 0]) - 0.5, np.max(embedding[:, 0]) + 1.5])
+#     plt.ylim([np.min(embedding[:, 1]) - 0.5, np.max(embedding[:, 1]) + 0.5])
+#     plt.xlabel('UMAP 1', fontsize=labelsize)
+#     plt.ylabel('UMAP 2', fontsize=labelsize)
+#     ax.spines['right'].set_visible(False)
+#     ax.spines['top'].set_visible(False)
     
-    def draw_multiple_umap(self, embedding, names=None, output_dir=None, labelsize=14):
-        label = self.label
-    
-        if not isinstance(embedding, list):
-            embedding = [embedding]
-        names = [names for i in range(len(embedding))] if names is None else [s[:-4] for s in names]
-        
-        palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
-        fig, ax = plt.subplots(1, len(embedding), figsize=(len(embedding)*12.5, 10))
-
-        for (i, embed), figname in zip(enumerate(embedding), names):
-            ax[i].set_xlim([np.min(embed[:, 0]) - 0.5, np.max(embed[:, 0]) + 1.5])
-            ax[i].set_ylim([np.min(embed[:, 1]) - 0.5, np.max(embed[:, 1]) + 0.5])
-            ax[i].set_xlabel('UMAP 1', fontsize=labelsize)
-            ax[i].set_ylabel('UMAP 2', fontsize=labelsize)
-            ax[i].set_title(figname)
-            ax[i].spines['right'].set_visible(False)
-            ax[i].spines['top'].set_visible(False)
-            
-            sns.scatterplot(x=embed[:, 0], y=embed[:, 1], hue=label, 
-                        hue_order=list(np.unique(label)), palette=palette, ax=ax[i])
-            leg = ax[i].legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
-            leg.get_frame().set_alpha(0.9)
-            plt.setp(ax[i], xticks=[], yticks=[])
-        
-        plt.show()
-        if output_dir is not None:
-            import os
-            fig.savefig(os.path.join(output_dir, self.denoise_method+'-results.png'))
-
-
-def get_embedding(data):
-    """ Function to compute the UMAP embedding"""
-    data_scaled = StandardScaler().fit_transform(data)
-
-    embedding = umap.UMAP(n_neighbors=10,
-                            min_dist=0.5,
-                            metric='correlation',
-                            random_state=16).fit_transform(data_scaled)
-    return embedding
-
-
-def draw_umap(embedding, label):
-    contour_c = '#444444'
-    labelsize = 25
-    label = label
-    palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
-
-    fig, ax = plt.subplots(figsize=(20, 15))
-
-    plt.xlim([np.min(embedding[:, 0]) - 0.5, np.max(embedding[:, 0]) + 1.5])
-    plt.ylim([np.min(embedding[:, 1]) - 0.5, np.max(embedding[:, 1]) + 0.5])
-    plt.xlabel('UMAP 1', fontsize=labelsize)
-    plt.ylabel('UMAP 2', fontsize=labelsize)
-    ax.spines['right'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    
-    # plt.scatter(embedding[:, 0], embedding[:, 1], lw=0, , label=label, alpha=1.0, s=180, linewidth=2)
-    sns.scatterplot(x=embedding[:, 0], y=embedding[:, 1], hue=label, 
-                hue_order=list(np.unique(label)), palette=palette)
-    leg = plt.legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
-    leg.get_frame().set_alpha(0.9)
-    plt.setp(ax, xticks=[], yticks=[])
-    plt.show()
+#     # plt.scatter(embedding[:, 0], embedding[:, 1], lw=0, , label=label, alpha=1.0, s=180, linewidth=2)
+#     sns.scatterplot(x=embedding[:, 0], y=embedding[:, 1], hue=label, 
+#                 hue_order=list(np.unique(label)), palette=palette)
+#     leg = plt.legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
+#     leg.get_frame().set_alpha(0.9)
+#     plt.setp(ax, xticks=[], yticks=[])
+#     plt.show()
     
     
-def draw_multiple_umap(embedding, label, ax=None, figsize=(15, 10), labelsize=12):
-    plt.close()
-    palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
-    if isinstance(embedding, list):
-        fig, ax = plt.subplots(1, len(embedding), figsize=(len(embedding)*12.5, 10))
+# def draw_multiple_umap(embedding, label, ax=None, figsize=(15, 10), labelsize=12):
+#     plt.close()
+#     palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
+#     if isinstance(embedding, list):
+#         fig, ax = plt.subplots(1, len(embedding), figsize=(len(embedding)*12.5, 10))
 
-    for i, embed in enumerate(embedding):
-        ax[i].set_xlim([np.min(embed[:, 0]) - 0.5, np.max(embed[:, 0]) + 1.5])
-        ax[i].set_ylim([np.min(embed[:, 1]) - 0.5, np.max(embed[:, 1]) + 0.5])
-        ax[i].set_xlabel('UMAP 1', fontsize=labelsize)
-        ax[i].set_ylabel('UMAP 2', fontsize=labelsize)
+#     for i, embed in enumerate(embedding):
+#         ax[i].set_xlim([np.min(embed[:, 0]) - 0.5, np.max(embed[:, 0]) + 1.5])
+#         ax[i].set_ylim([np.min(embed[:, 1]) - 0.5, np.max(embed[:, 1]) + 0.5])
+#         ax[i].set_xlabel('UMAP 1', fontsize=labelsize)
+#         ax[i].set_ylabel('UMAP 2', fontsize=labelsize)
 
-        ax[i].spines['right'].set_visible(False)
-        ax[i].spines['top'].set_visible(False)
+#         ax[i].spines['right'].set_visible(False)
+#         ax[i].spines['top'].set_visible(False)
         
-        sns.scatterplot(x=embed[:, 0], y=embed[:, 1], hue=label, 
-                    hue_order=list(np.unique(label)), palette=palette, ax=ax[i])
-        leg = ax[i].legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
-        leg.get_frame().set_alpha(0.9)
-        plt.setp(ax[i], xticks=[], yticks=[])
-    plt.show()    
+#         sns.scatterplot(x=embed[:, 0], y=embed[:, 1], hue=label, 
+#                     hue_order=list(np.unique(label)), palette=palette, ax=ax[i])
+#         leg = ax[i].legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
+#         leg.get_frame().set_alpha(0.9)
+#         plt.setp(ax[i], xticks=[], yticks=[])
+#     plt.show()    
 
 
 def tsne_plot(embedding, label, pred, filename,seed):

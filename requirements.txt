@@ -9,3 +9,4 @@ kopt
 pandas
 jgraph
 colorcet
+numba==0.56.0

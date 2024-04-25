@@ -39,7 +39,7 @@ save.sim <- function(sim, dir) {
 
 
 for (dropout in c(1, 5)) {
-  for (ngroup in c(2, 6)) {
+  for (ngroup in c(2, 5)) {
     for(swap in c(F)) {
 
       nGenes <- 200
