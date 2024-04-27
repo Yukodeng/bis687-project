@@ -5,4 +5,4 @@ sc-env/
 results/tb/
 data/endoderm/results/
 data/endoderm/endoderm.csv
-# data/endoderm/endoder*
+results/endoderm/endoderm_mean_replaced.csv

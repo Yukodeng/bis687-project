@@ -124,3 +124,41 @@ def write_text_matrix(matrix, filename, rownames=None, colnames=None, transpose=
                                                                 index=(rownames is not None),
                                                                 header=(colnames is not None),
                                                                 float_format='%.6f')
+
+def load_simulate(data, show_result=True):
+    # data
+    truecounts = pd.read_csv('data/' + data + '/info_truecounts.tsv', sep='\t',index_col=0).T
+    counts = pd.read_csv('data/' + data + '/counts.tsv', sep='\t',index_col=0).T
+    dropout = pd.read_csv('data/' + data + '/info_dropout.tsv', sep='\t').T
+    cellinfo = pd.read_csv('data/' + data + '/info_cellinfo.tsv', sep='\t')
+    geneinfo = pd.read_csv('data/' + data + '/info_geneinfo.tsv', sep='\t')
+
+    sim_raw = sc.AnnData(counts.values, obs=cellinfo, var=geneinfo)
+    sim_raw.obs_names = cellinfo.Cell
+    sim_raw.var_names = geneinfo.Gene
+    sc.pp.filter_genes(sim_raw, min_counts=1)
+
+    # remove zero-genes from dropout data frame too
+    dropout_gt = dropout.loc[:, sim_raw.var_names].values
+
+    sim_true = sc.AnnData(truecounts.values, obs=cellinfo, var=geneinfo)
+    sim_true.obs_names = cellinfo.Cell
+    sim_true.var_names = geneinfo.Gene
+    sim_true = sim_true[:, sim_raw.var_names].copy()
+
+    sim_raw_norm = sim_raw.copy()
+    sc.pp.filter_genes(sim_raw, min_counts=1)
+    sc.pp.normalize_total(sim_raw_norm)
+    sc.pp.log1p(sim_raw_norm)
+    sc.pp.pca(sim_raw_norm)
+
+    sim_true_norm = sim_true.copy()
+    sc.pp.normalize_total(sim_true_norm)
+    sc.pp.log1p(sim_true_norm)
+    sc.pp.pca(sim_true_norm)
+
+    if show_result:
+        print(dropout_gt[:10, :10])
+        print(sim_raw)
+        print(sim_true)
+    return sim_true, sim_true_norm, sim_raw, sim_raw_norm
