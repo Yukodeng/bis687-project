@@ -70,8 +70,7 @@ if __name__ == "__main__":
         #YD add
         np.random.seed(42)
 
-        scDenoising = scDMFK(output_dir=args.outputdir,
-                            input_size=input_size, output_size=output_size, dims=args.dims, 
+        scDenoising = scDMFK(input_size=input_size, output_size=output_size, dims=args.dims, 
                             alpha=args.alpha, sigma=args.sigma, 
                             learning_rate=args.learning_rate,
                             noise_sd=args.noise_sd,
@@ -84,6 +83,6 @@ if __name__ == "__main__":
         scDenoising.predict(adata)
 
         if args.outputdir is not None:
-            scDenoising.write(adata)
+            scDenoising.write(adata, output_dir=args.outputdir)
             
     

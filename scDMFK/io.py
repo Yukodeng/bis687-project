@@ -67,7 +67,8 @@ def calculate_cluster_results(data, true_labels, seed):
     return ari, nmi, sc, embedding
 
 
-def draw_umap(embedding, label, figname=None, output_dir=None, figsize=(15, 10), labelsize=12):  
+def draw_umap(embedding, label, figname=None, output_dir=None, figsize=(15, 10), 
+            labelsize=12, markerscale=2.00):  
 
     palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
     fig, ax = plt.subplots(figsize=figsize)
@@ -83,16 +84,17 @@ def draw_umap(embedding, label, figname=None, output_dir=None, figsize=(15, 10),
     
     sns.scatterplot(x=embedding[:, 0], y=embedding[:, 1], hue=label, 
                 hue_order=list(np.unique(label)), palette=palette)
-    leg = plt.legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
+    leg = plt.legend(prop={'size': labelsize}, loc=7, markerscale=markerscale)
     leg.get_frame().set_alpha(0.9)
     plt.setp(ax, xticks=[], yticks=[])
     plt.show()
     if output_dir is not None:
         import os
-        fig.savefig(os.path.join(output_dir, figname+ '.png'))
+        fig.savefig(os.path.join(output_dir, figname + '.png'))
 
     
-def draw_multiple_umap(embeddings, label, names=None, output_dir=None, denoise_method=None, labelsize=14):
+def draw_multiple_umap(embeddings, label, names=None, output_dir=None, denoise_method=None,
+                    labelsize=14, markerscale=2.00):
     
     if not isinstance(embeddings, list):
         embeddings = [embeddings]
@@ -112,120 +114,85 @@ def draw_multiple_umap(embeddings, label, names=None, output_dir=None, denoise_m
         
         sns.scatterplot(x=embed[:, 0], y=embed[:, 1], hue=label, 
                     hue_order=list(np.unique(label)), palette=palette, ax=ax[i])
-        leg = ax[i].legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
-        leg.get_frame().set_alpha(0.9)
+        ax[i].get_legend().remove()
         plt.setp(ax[i], xticks=[], yticks=[])
+    
+    leg = fig.legend(*ax[0].get_legend_handles_labels(), 
+                    prop={'size': labelsize}, loc=7,  markerscale=markerscale)
+    leg.get_frame().set_alpha(0.9)
     plt.show()
     if output_dir is not None:
         import os
         fig.savefig(os.path.join(output_dir, denoise_method+'-results.png'))
 
 class Clustering():
-    def __init__(self, adata, denoise_method, 
-                label, random_seed=None, mode=['raw','denoise'],
+    def __init__(self, dataname, 
+                denoise_data, denoise_method, 
+                label, transpose=False, random_seed=None, mode=['denoise'],
                 show_plot=False):
-        self.adata = adata
+        self.dataname = dataname
+        self.denoise_data = denoise_data
         self.denoise_method = denoise_method
         self.label = label
+        self.transpose = transpose
         self.mode = mode
         self.random_seed = random_seed
         self.show_plot = show_plot
         self.n_clusters = len(np.unique(self.label))
         if not isinstance(self.random_seed, list):
             self.random_seed = [self.random_seed]
+        if not isinstance(self.mode, list):
+            self.mode = [self.mode]
         
-        self.datasets = []
-        if 'raw' in self.mode:
-            self.datasets.append(adata.raw.X) # raw data
-        if 'denoise' in self.mode:
-            self.datasets.append(adata.X) # denoised data
-        if 'latent' in self.mode:
-            self.datasets.append(adata.obsm['X_hidden']) # latent repre
+        datasets = []
+        for adata in denoise_data:
+            # if 'raw' in self.mode:
+            #     datasets.append(adata.raw.X.T if self.transpose else adata.raw.X) # raw data
+            if 'denoise' in self.mode:
+                datasets.append(adata.X.T
+                                    if self.transpose else adata.X) # denoised data
+            if 'latent' in self.mode:
+                datasets.append(adata.obsm['X_hidden'].T if self.transpose else adata.obsm['X_hidden']) # latent repre
         
         result = []
         self.embeddings = []
         self.fignames = []
-        for name, data in zip(self.mode, self.datasets):
-            for seed in self.random_seed:
-            
-                print("seed: %d  Evaluating clustering results for %s data..." % (seed, name))
-                
-                ari, nmi, sc, embedding = calculate_cluster_results(data, self.label, seed)
-                result.append([self.denoise_method, name, seed, ari, nmi, sc])
-                figname = '-'.join(str(s).lower() for s in [self.denoise_method, name, seed])
-                self.fignames.append(figname)
-                self.embeddings.append(embedding)
+        for data, dn_method in zip(datasets, denoise_method):
+            for mode in self.mode:
+                for seed in self.random_seed:
+                    print("seed: %d  Evaluating clustering results for %s data..." % (seed, dn_method))
+                    
+                    ari, nmi, sc, embedding = self.calculate_cluster_results(data, seed)
+                    result.append([self.dataname, dn_method, seed, ari, nmi, sc])
+                    figname = '-'.join(str(s).lower() for s in [self.denoise_method, mode, seed]) + '.png'
+                    self.fignames.append(figname)
+                    self.embeddings.append(embedding)
                 
         self.output = np.array(result)
-        self.output = pd.DataFrame(self.output, columns=["denoise method", "dataname", "random seed", "ARI", "NMI", "SC"])
-        
+        self.output = pd.DataFrame(self.output, 
+                            columns=["data", "denoise method", "random seed", "ARI", "NMI", "SC"])
+    
     def get_output(self):
         return self.output
     
-    def get_umap(self,
-                method=None, mode=None, seed=None, same_figure=False, output_dir=None):
+    def get_umap(self, method=None, mode=None, seed=None, same_figure=False, output_dir=None,
+                labelsize=15, markerscale=2.00):
         search = lambda string, key: True if string is None else any([str(s) in key for s in string])
-        
         inds = [
             (search(method, name) and search(mode, name) and search(seed, name)) for name in self.fignames]
         from itertools import compress
         
         embeddings = list(compress(self.embeddings, inds))
         fignames = list(compress(self.fignames,inds))
-        label = self.label
         
         if same_figure:
-            draw_multiple_umap(embeddings, label, fignames, output_dir)
+            self.draw_multiple_umap(embeddings, fignames, output_dir,
+                                labelsize=labelsize, markerscale=markerscale)
         else:
             for figname, emb in zip(fignames, embeddings):
-                draw_umap(emb, label, figname, output_dir, self.denoise_method)
-
-
-# def draw_umap(embedding, label):
-#     contour_c = '#444444'
-#     labelsize = 25
-#     label = label
-#     palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
-
-#     fig, ax = plt.subplots(figsize=(20, 15))
-
-#     plt.xlim([np.min(embedding[:, 0]) - 0.5, np.max(embedding[:, 0]) + 1.5])
-#     plt.ylim([np.min(embedding[:, 1]) - 0.5, np.max(embedding[:, 1]) + 0.5])
-#     plt.xlabel('UMAP 1', fontsize=labelsize)
-#     plt.ylabel('UMAP 2', fontsize=labelsize)
-#     ax.spines['right'].set_visible(False)
-#     ax.spines['top'].set_visible(False)
-    
-#     # plt.scatter(embedding[:, 0], embedding[:, 1], lw=0, , label=label, alpha=1.0, s=180, linewidth=2)
-#     sns.scatterplot(x=embedding[:, 0], y=embedding[:, 1], hue=label, 
-#                 hue_order=list(np.unique(label)), palette=palette)
-#     leg = plt.legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
-#     leg.get_frame().set_alpha(0.9)
-#     plt.setp(ax, xticks=[], yticks=[])
-#     plt.show()
-    
-    
-# def draw_multiple_umap(embedding, label, ax=None, figsize=(15, 10), labelsize=12):
-#     plt.close()
-#     palette = sns.color_palette(cc.glasbey, n_colors=len(np.unique(label)))
-#     if isinstance(embedding, list):
-#         fig, ax = plt.subplots(1, len(embedding), figsize=(len(embedding)*12.5, 10))
-
-#     for i, embed in enumerate(embedding):
-#         ax[i].set_xlim([np.min(embed[:, 0]) - 0.5, np.max(embed[:, 0]) + 1.5])
-#         ax[i].set_ylim([np.min(embed[:, 1]) - 0.5, np.max(embed[:, 1]) + 0.5])
-#         ax[i].set_xlabel('UMAP 1', fontsize=labelsize)
-#         ax[i].set_ylabel('UMAP 2', fontsize=labelsize)
-
-#         ax[i].spines['right'].set_visible(False)
-#         ax[i].spines['top'].set_visible(False)
+                self.draw_umap(emb, figname, output_dir,
+                            labelsize=labelsize, markerscale=markerscale)
         
-#         sns.scatterplot(x=embed[:, 0], y=embed[:, 1], hue=label, 
-#                     hue_order=list(np.unique(label)), palette=palette, ax=ax[i])
-#         leg = ax[i].legend(prop={'size': labelsize}, loc='upper right', markerscale=2.00)
-#         leg.get_frame().set_alpha(0.9)
-#         plt.setp(ax[i], xticks=[], yticks=[])
-#     plt.show()    
 
 
 def tsne_plot(embedding, label, pred, filename,seed):

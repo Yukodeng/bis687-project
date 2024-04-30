@@ -6,3 +6,5 @@ results/tb/
 data/endoderm/results/
 data/endoderm/endoderm.csv
 results/endoderm/endoderm_mean_replaced.csv
+data/Young/Young-5000.csv
+data/Young/Young-10000.csv

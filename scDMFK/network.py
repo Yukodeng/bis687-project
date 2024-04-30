@@ -19,11 +19,10 @@ from scipy.optimize import linear_sum_assignment as linear_assignment
 import os
 import random
 import numpy as np
-from tqdm import tqdm
 from preprocess import *
 from io import *
 
-MeanAct = lambda x: tf.clip_by_value(x, 1e-5, 1e6)
+MeanAct = lambda x: tf.clip_by_value(K.exp(x), 1e-5, 1e6)
 DispAct = lambda x: tf.clip_by_value(tf.nn.softplus(x), 1e-4, 1e4)
 
 
@@ -40,7 +39,6 @@ def cluster_acc(y_true, y_pred):
     row_ind, col_ind = linear_assignment(w.max() - w) # YD Change
     return sum([w[i, j] for i, j in zip(row_ind, col_ind)]) * 1.0 / y_pred.size # YD Change
 
-
 def cal_dist(hidden, clusters):
     dist1 = K.sum(K.square(K.expand_dims(hidden, axis=1) - clusters), axis=2)
     temp_dist1 = dist1 - tf.reshape(tf.reduce_min(dist1, axis=1), [-1, 1])
@@ -51,13 +49,11 @@ def cal_dist(hidden, clusters):
     dist2 = dist1 * q
     return dist1, dist2
 
-
 def adapative_dist(hidden, clusters, sigma):
     dist1 = K.sum(K.square(K.expand_dims(hidden, axis=1) - clusters), axis=2)
     dist2 = K.sqrt(dist1)
     dist = (1 + sigma) * dist1 / (dist2 + sigma)
     return dist
-
 
 def fuzzy_kmeans(hidden, clusters, sigma, theta, adapative = True):
     if adapative:
@@ -71,6 +67,7 @@ def fuzzy_kmeans(hidden, clusters, sigma, theta, adapative = True):
     return dist, fuzzy_dist
 
 
+### Activation and loss functions
 def _nan2zero(x):
     return tf.where(tf.math.is_nan(x), tf.zeros_like(x), x)
 
@@ -104,7 +101,6 @@ class mMSE(wMSE):
         mask_loss = tf.sign(self.x) * tf.square(y_true - y_pred)
         return tf.reduce_mean(mask_loss)
 
-    
 class MultiNom(object):
     def __init__(self, mode='direct'):
         self.mode=mode
@@ -114,14 +110,14 @@ class MultiNom(object):
         return result
 
 class IndirMultiNom(object):
-    def __init__(self, mode='indirect'):
-        # self.pi = pi
+    def __init__(self, pi, mode='indirect'):
+        self.pi = pi
         self.mode = mode
     
     def loss(self, y_true, y_pred):
         # Compute P using y_pred(V) and pi
-        # P = tf.transpose(tf.transpose(self.pi * y_pred) / tf.reduce_sum(self.pi * y_pred, axis=1))
-        loss = tf.reduce_mean(-y_true * tf.math.log(tf.clip_by_value(y_pred, 1e-12, 1.0)))
+        P = tf.transpose(tf.transpose(self.pi * y_pred) / tf.reduce_sum(self.pi * y_pred, axis=1))
+        loss = tf.reduce_mean(-y_true * tf.math.log(tf.clip_by_value(P, 1e-12, 1.0)))
         return loss
 
 class NB(object):
@@ -196,6 +192,7 @@ class ZINB(NB):
 
         result = _nan2inf(result)
         return result
+    
 
 
 ## Main autoencoder structure
@@ -256,13 +253,15 @@ class scDMFK():
             if self.mode == "indirect":                
                 # output layer
                 self.mean = Dense(units=self.output_size, activation=MeanAct, kernel_initializer=self.init, name='mean')(self.h)
+                ## self.output: this one is the expected count Vij for denoising purpose!!
                 self.output = self.mean * tf.matmul(self.sf_layer, tf.ones((1, self.mean.get_shape()[1]), dtype=tf.float32))
                 self.pi = Dense(units=self.output_size, activation='sigmoid', kernel_initializer=self.init, name='pi')(self.h)
-                self.output = tf.transpose(tf.transpose(self.pi * self.output) / tf.reduce_sum(self.pi * self.output, axis=1))    
-                # pi computation as a parallel output
+                self.P = tf.transpose(tf.transpose(self.pi * self.output) / tf.reduce_sum(self.pi * self.output, axis=1))
+                ## pi computation as a parallel output
                 # self.pi_layer = PiLayer(output_size=self.output_size, activation='sigmoid')
                 # self.pi = self.pi_layer(self.h)
-                multinom = IndirMultiNom()
+                multinom = IndirMultiNom(pi=self.pi)
+
             else:
                 self.output = Dense(units=self.output_size, activation=tf.nn.softmax, kernel_initializer=self.init, name='pi')(self.h)
                 multinom = MultiNom()
@@ -289,26 +288,21 @@ class scDMFK():
         self.model = Model(inputs=[self.x, self.x_count, self.sf_layer], outputs=self.output)
         
         # get hidden representation: encoder output
-        self.encoder = Model(inputs=self.model.input, outputs=self.model.get_layer('hidden').output)        
+        self.encoder = Model(inputs=self.model.input, outputs=self.model.get_layer('hidden').output)     
 
 
     def predict(self, adata, copy=False):        
         adata = adata.copy() if copy else adata
 
         print('Calculating reconstructions...') 
-        prediction = self.model.predict({'original': adata.raw.X,
+        adata.X = self.model.predict({'original': adata.raw.X,
                                     'count': adata.X,
                                     'size_factors': adata.obs.size_factors})
-        if self.distribution == "multinomial":
-            adata.X = prediction * adata.raw.X.sum(1)[:, np.newaxis]
-        else:
-            adata.X = prediction
 
         print('Calculating hidden representation...')
         adata.obsm['X_hidden'] = self.encoder.predict({'original': adata.raw.X,
                                     'count': adata.X,
                                     'size_factors': adata.obs.size_factors})
-        
         return adata if copy else None
 
     def write(self, adata, output_dir, colnames=None, rownames=None):  #YD added
@@ -319,11 +313,11 @@ class scDMFK():
         os.makedirs(data_path, exist_ok=True) 
         filename = 'results-%s.h5ad'%self.distribution
         
-        adata.write(os.path.join(data_path, filename), compression='gzip')
+        adata.write(os.path.join(data_path, filename))
 
 
     def pretrain(self, adata, size_factor, batch_size=64, pretrain_epoch=100, gpu_option='0',
-                 tensorboard=False):
+                tensorboard=False):
         print("Begin the pretraining...")
         
         # set seed for reproducibility
@@ -359,9 +353,9 @@ class scDMFK():
                         epochs=pretrain_epoch,
                         batch_size=batch_size,
                         shuffle=True,
-                        validation_split=0.2,
+                        validation_split=0.1,
                         callbacks=callback,
-                        verbose=0)
+                        verbose=2)
         
         print("Average loss: ", np.average(self.losses.history['loss']))
     
@@ -370,7 +364,6 @@ class scDMFK():
         
     def print_train_history(self, output_dir, save=False): #plot the training history
         import matplotlib.pyplot as plt
-
         plt.plot(self.losses.history['loss'], label='Training Loss')
         plt.plot(self.losses.history['val_loss'], label='Validation Loss')
         plt.legend()
@@ -432,4 +425,3 @@ class scDMFK():
         self.ARI = np.around(adjusted_rand_score(Y, self.Y_pred), 4)
         self.NMI = np.around(normalized_mutual_info_score(Y, self.Y_pred), 4)
         return self.accuracy, self.ARI, self.NMI
-
